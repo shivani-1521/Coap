@@ -1,4 +1,4 @@
-package Coap
+package CoapPS
 
 import(
 	"log"
@@ -105,3 +105,97 @@ func(c* CoapServer)addSub(topic string, client *net.UDPAddr){
 
 }
 
+func (c *CoapServer)publish(con *net.UDPConn, topic string, msg string){
+	if clients, exists := c.topicMapClients[topic]; !exists{
+		return
+	}else{
+		for _, client := range clients{
+			c.publishMsg(con, client, topic, msg)
+			log.Println("topic ", topic, " Publish to ", client, " message", msg)
+
+		}
+	}
+
+	log.Println("Publish done")
+}
+
+func(c *CoapServer) handleCoapMessage(con *net.UDPConn, add *net.UDPAddr, m *coap.Message) *coap.Message{
+
+	var topic string
+	if m.Path() != nil{
+		topic = m.Path()[0]
+	}
+
+	cmd := ParseUint8ToString(m.Option(coap.ETag))
+	log.Println("cmd ", cmd , " topic: ", topic, " message ", string(m.Payload))
+	log.Println("code ",  m.Code, " option ", cmd)
+
+	if cmd == "ADDSUB" {
+		log.Println("Add subscription topic ", topic, " in client ", add)
+		c.addSub(topic, add)
+		c.responseOK(con, add, m)
+	}else if cmd == "REMSUB" {
+		log.Println("Remove subscription topic ", topic, " in client ", add)
+		c.removeSub(topic, add)
+		c.responseOK(con, add, m)
+	}else if cmd == "PUB" {
+		log.Println(con, topic, string(m.Payload))
+		c.responseOK(con, add, m)
+	}else if cmd == "HB" {
+		log.Println("Got heart beat from ", add)
+		c.responseOK(con, a, m)
+	}
+
+	for k, v := range c.topicMapClients {
+		log.Println("Topic ", k, " sub by client ", v)
+	}
+
+	return nil
+
+}
+
+func(c *CoapServer)ListenAndServe(udpPort string){
+	log.Fatal(coap.ListenAndServe("UDP ", udpPort, coap.FuncHandler(func(con *net.UDPConn, add *net.UDPAddr, m *coap.Message) *coap.Message{
+		return c.handleCoapMessage(con, add, m)
+		})))
+}
+
+func(c *CoapServer)responseOK(con *net.UDPConn, add *net.UDPAddr, m *coap.Message) {
+	m2 := coap.Message{
+		Type:	coap.Acknowledgement,
+		Code:	coap.Content,
+		MessageID:	m.MessageID,
+		Payload:	m.Payload,
+
+	}
+
+	m2.SetOption(coap.ContentFormat, coap.TextPlain)
+	m2.SetOption(coap.LocationPath, m.Path())
+
+	err := coap.Transmit(conn, add, m2)
+	if err != nil{
+		log.Printf("Error in transmission %v ", err)
+		return
+	}
+
+}
+
+func(c *CoapServer)publishMsg(con *net.UDPConn, add *net.UDPAddr, topic string, msg string){
+	m := coap.Message{
+		Type:	coap.Confirmable,
+		Code:	coap.Content,
+		MessageID:	c.genMsgId(),
+		Payload:	[]byte(msg),
+
+	}
+
+	m.SetOption(coap.ContentFormat, coap.TextPlain)
+	m.SetOption(coap.LocationPath, topic)
+
+	log.Printf("Transmitting %v msg %s", m, msg)
+	err := coap.Transmit(con, add, m)
+	if err != nil{
+		log.Printf("transmission error %v", err)
+		return
+	}
+}
