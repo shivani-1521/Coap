@@ -49,6 +49,7 @@ func main() {
 	}
 
 	log.Println("Pending for waiting publish result ")
+
 	go func() {
 		for {
 			if rv != nil {
@@ -58,7 +59,7 @@ func main() {
 				log.Printf("Got %s", rv.Payload)
 			}
 			rv, err = c.Receive()
-			log.Println("receiv:", rv, " err=", err)
+			log.Println("receive ", rv, " err=", err)
 		}
 	}()
 
